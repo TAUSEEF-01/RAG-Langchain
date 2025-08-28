@@ -13,7 +13,7 @@ Raises:
     - ValueError: If an unsupported provider is specified.
 """
 
-# from src.embeddings.cohere_embeddings import CohereEmbedding
+from src.embeddings.cohere_embeddings import CohereEmbedding
 from src.embeddings.hf_embeddings import HFEmbedding
 from src.embeddings.gemini_embeddings import GeminiEmbedding
 
@@ -42,20 +42,20 @@ class EmbeddingsFactory:
             - ValueError: If the provider name is unsupported.
         """
 
-        # if provider.lower() == "cohere":
-        #     assert (
-        #         "cohere_api_key" in kwargs
-        #     ), "Please, enter pass `cohere_api_key` argument"
-        #     return CohereEmbedding(**kwargs)
+        if provider.lower() == "cohere":
+            assert (
+                "cohere_api_key" in kwargs
+            ), "Please, enter pass `cohere_api_key` argument"
+            return CohereEmbedding(**kwargs)
 
-        # elif provider.lower() == "huggingface":
-        #     return HFEmbedding(**kwargs)
+        elif provider.lower() == "huggingface":
+            return HFEmbedding(**kwargs)
 
-        # elif provider.lower() == "gemini":
-        assert (
-            "google_api_key" in kwargs
-        ), "Please, pass `google_api_key` argument for Gemini embeddings"
-        return GeminiEmbedding(**kwargs)
+        elif provider.lower() == "gemini":
+            assert (
+                "google_api_key" in kwargs
+            ), "Please, pass `google_api_key` argument for Gemini embeddings"
+            return GeminiEmbedding(**kwargs)
 
-        # else:
-        #     raise ValueError(f"Unsupported embeddings model provider: {provider}")
+        else:
+            raise ValueError(f"Unsupported embeddings model provider: {provider}")
