@@ -1,7 +1,7 @@
 import os
 import tempfile
 
-from langchain_cohere import CohereEmbeddings
+# from langchain_cohere import CohereEmbeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.messages import HumanMessage
 
@@ -15,7 +15,7 @@ from utils import (
     split_documents,
     build_vector_store,
     process_query,
-    process_chunks_with_rate_limit_cohere,
+    # process_chunks_with_rate_limit_cohere,
     add_chunks_to_vector_store_hf_embeddings,
     reset_memory,
 )
@@ -73,29 +73,29 @@ with st.sidebar:
     st.header("📝 1. Configuration")
 
     # 1. Provider & API Key
-    provider = st.selectbox("LLM Provider", ["cohere", "gemini"], index=0)
-    api_key_label = "Cohere" if provider == "cohere" else "Gemini"
+    provider = st.selectbox("LLM Provider", ["gemini"], index=0)
+    api_key_label = "Gemini"
     provider_api_key = st.text_input(
         f"Enter {api_key_label} API Key",
         type="password",
         placeholder=f"Enter your {api_key_label} API key",
     )
-    if provider == "cohere" and provider_api_key:
-        os.environ["COHERE_API_KEY"] = provider_api_key
+    # if provider == "cohere" and provider_api_key:
+    #     os.environ["COHERE_API_KEY"] = provider_api_key
     if provider == "gemini" and provider_api_key:
         os.environ["GOOGLE_API_KEY"] = provider_api_key
 
     # 2. Select an embedding model
-    if provider == "cohere":
-        embedding_options = [
-            "cohere/embed-v4.0",
-            "sentence-transformers/all-mpnet-base-v2",
-        ]
-    else:  # gemini
-        embedding_options = [
-            "models/text-embedding-004",
-            "sentence-transformers/all-mpnet-base-v2",
-        ]
+    # if provider == "gemini":
+    #     embedding_options = [
+    #         "cohere/embed-v4.0",
+    #         "sentence-transformers/all-mpnet-base-v2",
+    #     ]
+    # else:  # gemini
+    embedding_options = [
+        "models/text-embedding-004",
+        "sentence-transformers/all-mpnet-base-v2",
+    ]
     embeddings_type = st.selectbox("Select an Embedding Model", embedding_options)
 
     # Show reasoning steps toggle
@@ -141,10 +141,11 @@ with st.sidebar:
                 with st.spinner("Splitting PDF..."):
                     # Create embeddings and split the documents
                     kwargs = {}
-                    if embeddings_type.startswith("cohere"):
-                        kwargs["cohere_api_key"] = provider_api_key
-                    elif embeddings_type.startswith("models/text-embedding"):
-                        kwargs["google_api_key"] = provider_api_key
+                    # if embeddings_type.startswith("cohere"):
+                    #     kwargs["cohere_api_key"] = provider_api_key
+                    # elif 
+                    # embeddings_type.startswith("models/text-embedding")
+                    kwargs["google_api_key"] = provider_api_key
                     embeddings = create_embeddings(embeddings_type, **kwargs)
                     st.success("✅ Embeddings created successfully!")
                     chunks = split_documents(docs)
@@ -157,16 +158,16 @@ with st.sidebar:
                 vector_store = build_vector_store(embeddings)
 
                 # Add documents to vectorstore
-                if isinstance(embeddings, CohereEmbeddings):
-                    # Cohere has stricter per‑minute token limits; apply rate‑limited batching
-                    vector_store = process_chunks_with_rate_limit_cohere(
-                        chunks, vector_store
-                    )
-                else:
+                # if isinstance(embeddings, CohereEmbeddings):
+                #     # Cohere has stricter per‑minute token limits; apply rate‑limited batching
+                #     vector_store = process_chunks_with_rate_limit_cohere(
+                #         chunks, vector_store
+                #     )
+                # else:
                     # Gemini + HF embeddings: simple batched add (no Cohere token estimation needed)
-                    vector_store = add_chunks_to_vector_store_hf_embeddings(
-                        chunks, vector_store
-                    )
+                vector_store = add_chunks_to_vector_store_hf_embeddings(
+                    chunks, vector_store
+                )
 
                 st.session_state.vector_store = vector_store
 

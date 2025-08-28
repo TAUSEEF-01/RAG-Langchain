@@ -9,7 +9,7 @@ Methods:
     - based on the given type and configuration.
 """
 
-from src.llms.cohere_llm import CohereLLM
+# from src.llms.cohere_llm import CohereLLM
 from src.llms.gemini_llm import GeminiLLM
 
 
@@ -36,15 +36,15 @@ class LLMFactory:
             - ValueError: If the specified `llm_type` is not supported.
         """
 
-        if llm_type.lower() == "cohere":
-            assert (
-                "cohere_api_key" in kwargs
-            ), "Please, enter pass `cohere_api_key` argument"
-            return CohereLLM(**kwargs)
+        # if llm_type.lower() == "cohere":
+        #     assert (
+        #         "cohere_api_key" in kwargs
+        #     ), "Please, enter pass `cohere_api_key` argument"
+        #     return CohereLLM(**kwargs)
 
-        if llm_type.lower() == "gemini":
-            assert "google_api_key" in kwargs, "Please, pass `google_api_key` argument"
-            return GeminiLLM(**kwargs)
+        # if llm_type.lower() == "gemini":
+        assert "google_api_key" in kwargs, "Please, pass `google_api_key` argument"
+        return GeminiLLM(**kwargs)
 
-        else:
-            raise ValueError(f"Unsupported LLM type: {llm_type}")
+        # else:
+        #     raise ValueError(f"Unsupported LLM type: {llm_type}")

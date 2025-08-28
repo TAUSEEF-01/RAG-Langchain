@@ -90,7 +90,7 @@ After following the above instructions, you may expect to see this interface:
 ## 📖 Usage
 1. Open the app in your browser (default: http://localhost:8501).
 
-2. Enter your `COHERE_API_KEY` in its proper place; both `trial` and `production` keys work properly.
+2. Enter your `GEMINI_API_KEY` in its proper place; both `trial` and `production` keys work properly.
 
 ![image](https://github.com/user-attachments/assets/84c8d8d1-8605-48c9-8d62-23d2bd14a536)
 

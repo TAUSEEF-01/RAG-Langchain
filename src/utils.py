@@ -2,7 +2,8 @@ import time
 import sys
 import os
 
-import cohere
+# import cohere
+import google.generativeai as genai
 from typing import Optional, Callable
 
 # Adding project path to sys to solve importing errors
@@ -86,14 +87,18 @@ def create_embeddings(embedding_type_selection: str, **kwargs):
     """
 
     provider = None
-    if embedding_type_selection.startswith("cohere"):
-        provider = "cohere"
-        assert "cohere_api_key" in kwargs, "Please, pass the `cohere_api_key` argument"
-    elif embedding_type_selection.startswith("models/text-embedding"):
+    # if embedding_type_selection.startswith("cohere"):
+    #     provider = "cohere"
+    #     assert "cohere_api_key" in kwargs, "Please, pass the `cohere_api_key` argument"
+    # elif embedding_type_selection.startswith("models/text-embedding"):
+    #     provider = "gemini"
+    #     assert "google_api_key" in kwargs, "Please, pass the `google_api_key` argument"
+    # else:
+    #     provider = "huggingface"
+
+    if embedding_type_selection.startswith("models/text-embedding"):
         provider = "gemini"
         assert "google_api_key" in kwargs, "Please, pass the `google_api_key` argument"
-    else:
-        provider = "huggingface"
 
     embeddings = EmbeddingsFactory.create_embeddings(provider, **kwargs)
 
@@ -142,7 +147,7 @@ def create_rag_agent_exectutor(
     provider_api_key: str,
     vector_store,
     number_of_retrieved_documents: int,
-    llm_provider: str = "cohere",
+    llm_provider: str = "gemini",
 ):
     """
     Creates a ReAct RAG agent executor using the provided Cohere API key, vector store,
@@ -169,9 +174,10 @@ def create_rag_agent_exectutor(
         >>> response = rag_executor.run("What is the impact of AI on healthcare?")
     """
 
-    if llm_provider == "cohere":
-        llm_wrapper = LLMFactory.create_llm("cohere", cohere_api_key=provider_api_key)
-    elif llm_provider == "gemini":
+    # if llm_provider == "cohere":
+    #     llm_wrapper = LLMFactory.create_llm("cohere", cohere_api_key=provider_api_key)
+    # elif
+    if llm_provider == "gemini":
         llm_wrapper = LLMFactory.create_llm("gemini", google_api_key=provider_api_key)
     else:
         raise ValueError("Unsupported LLM provider")
@@ -188,7 +194,7 @@ def process_query(
     provider_api_key: str,
     agent_avatar: str,
     number_of_retrieved_documents: int = 5,
-    llm_provider: str = "cohere",
+    llm_provider: str = "gemini",
     simple_mode: bool = False,
 ):
     """
@@ -296,14 +302,12 @@ def process_query(
         )
 
         # Build or reuse LLM
-        if llm_provider == "cohere":
-            llm_wrapper = LLMFactory.create_llm(
-                "cohere", cohere_api_key=provider_api_key
-            )
-        else:
-            llm_wrapper = LLMFactory.create_llm(
-                "gemini", google_api_key=provider_api_key
-            )
+        # if llm_provider == "cohere":
+        #     llm_wrapper = LLMFactory.create_llm(
+        #         "cohere", cohere_api_key=provider_api_key
+        #     )
+        # else:
+        llm_wrapper = LLMFactory.create_llm("gemini", google_api_key=provider_api_key)
         llm = llm_wrapper.get_llm()
         synthesis_prompt = (
             "You are the 2025 AI Index Report Assistant.\n"
@@ -411,9 +415,9 @@ def process_query(
 
 def estimate_tokens(text: str):
     """
-    Estimate the number of tokens in a given text string using the tokenizer from Cohere.
+    Estimate the number of tokens in a given text string using the tokenizer from Gemini.
 
-    The function uses the Cohere library to tokenize the provided text and return the number of tokens.
+    The function uses the Google Generative AI library to tokenize the provided text and return the number of tokens.
     This is useful for estimating how much input text will cost in terms of tokens when interacting
     with language models that have token limits.
 
@@ -427,12 +431,13 @@ def estimate_tokens(text: str):
         >>> estimate_tokens("Hello, how are you?")
         5
     """
-    api_key = os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if api_key:
         try:
-            co = cohere.Client()
-            response = co.tokenize(text=text, model="command-a-03-2025")
-            return len(response.tokens)
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            response = model.count_tokens(text)
+            return response.total_tokens
         except Exception:
             pass
     # Fallback heuristic: ~4 chars per token
