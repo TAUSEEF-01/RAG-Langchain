@@ -60,7 +60,7 @@ The RAG system is composed of:
 ### **1️⃣ Clone the Repository**
 
 ```sh
-git clone https://github.com/TAUSEEF-01/RAG-Langchain-using-GeminiAPI.git
+git clone https://github.com/TAUSEEF-01/RAG-Langchain.git
 cd RAG-Langchain-using-GeminiAPI
 ```
 
