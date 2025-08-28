@@ -61,7 +61,7 @@ The RAG system is composed of:
 
 ```sh
 git clone https://github.com/TAUSEEF-01/RAG-Langchain.git
-cd RAG-Langchain-using-GeminiAPI
+cd RAG-Langchain
 ```
 
 ### **2️⃣ Create and Activate Virtual Environment**
