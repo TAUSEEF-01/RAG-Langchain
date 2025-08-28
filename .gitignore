@@ -7,3 +7,8 @@ rag-agent/
 
 # Ignore Chroma vector database
 chroma-langchain-db/
+
+**/venv/
+**/.venv/
+**/env/
+**/.env/
