@@ -12,3 +12,5 @@ chroma-langchain-db/
 **/.venv/
 **/env/
 **/.env/
+
+project_2/.env/
