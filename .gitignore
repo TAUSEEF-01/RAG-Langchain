@@ -16,3 +16,5 @@ chroma-langchain-db/
 # Environment variable files
 .env
 Project_2/.env
+
+Project_2/check_chroma_cloud.py
