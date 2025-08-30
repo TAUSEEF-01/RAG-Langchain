@@ -13,8 +13,17 @@ chroma-langchain-db/
 **/env/
 **/.env
 
+**/new_env/
+**/.new_env/
+
+**/fresh_venv/
+**/.fresh_venv/
+
 # Environment variable files
 .env
+Project_1/.env
 Project_2/.env
+Project_3/.env
+Project_4/.env
 
 Project_2/check_chroma_cloud.py
