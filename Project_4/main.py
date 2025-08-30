@@ -122,10 +122,31 @@ def main(
     # This will automatically load any previously saved collections.
     # Learn more at docs.trychroma.com
     # client = chromadb.PersistentClient(path=persist_directory)
+    chroma_api_key = os.getenv("CHROMA_API_KEY")
+    chroma_tenant = os.getenv("CHROMA_TENANT")
+    chroma_database = os.getenv("CHROMA_DATABASE")
+
+    missing = [
+        name
+        for name, val in [
+            ("CHROMA_API_KEY", chroma_api_key),
+            ("CHROMA_TENANT", chroma_tenant),
+            ("CHROMA_DATABASE", chroma_database),
+        ]
+        if not val
+    ]
+
+    if missing:
+        raise RuntimeError(
+            "Missing required Chroma Cloud environment variables: "
+            + ", ".join(missing)
+            + ". Set them in your environment or .env file."
+        )
+
     client = chromadb.CloudClient(
-        api_key='ck-42Y5HL5EMDanjy6xygHTL4gf4SksTNLEoud66zxRNxxX',
-        tenant='204facc0-6c88-4b9a-ad1b-a483f3ff4181',
-        database='Rag-java-fest-2025'
+        api_key=chroma_api_key,
+        tenant=chroma_tenant,
+        database=chroma_database,
     )
 
     # create embedding function
