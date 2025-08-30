@@ -1,7 +1,9 @@
 import streamlit as st
-import time
 import os
 import asyncio
+import requests
+import pathlib
+import hashlib
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -23,41 +25,124 @@ except RuntimeError:
 
 st.title("RAG Application built on Gemini Model (Persistent Chroma)")
 
-# Cache heavy objects so they are created only once per session
-if "retriever" not in st.session_state:
-    persist_dir = "chroma_store"  # existing directory with chroma.sqlite3
-    rebuild = st.sidebar.toggle(
-        "Rebuild Vector Store from PDF",
-        value=False,
-        help="Force re-embedding Automata.pdf and overwrite the existing Chroma store.",
-    )
+# ----------------------- Sidebar: PDF Source Selection -----------------------
+st.sidebar.header("PDF Source")
 
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    store_exists = os.path.exists(os.path.join(persist_dir, "chroma.sqlite3"))
 
-    if store_exists and not rebuild:
-        vectorstore = Chroma(
-            persist_directory=persist_dir, embedding_function=embeddings
-        )
-        st.session_state["docs_count"] = vectorstore._collection.count()  # type: ignore (private attr)
-        st.sidebar.success("Loaded existing Chroma store")
+def save_uploaded_pdf(uploaded_file) -> pathlib.Path:
+    uploads_dir = pathlib.Path("uploaded_pdfs")
+    uploads_dir.mkdir(exist_ok=True)
+    safe_name = pathlib.Path(uploaded_file.name).name
+    target = uploads_dir / safe_name
+    with open(target, "wb") as f:
+        f.write(uploaded_file.read())
+    latest = uploads_dir / "uploaded_latest.pdf"
+    try:
+        if latest.exists() or latest.is_symlink():
+            latest.unlink()
+        try:
+            os.symlink(target, latest)
+        except OSError:
+            import shutil
+
+            shutil.copy2(target, latest)
+    except Exception:
+        pass
+    return target
+
+
+uploaded_pdf = st.sidebar.file_uploader(
+    "Upload a PDF", type=["pdf"], help="Embed a local PDF."
+)
+pdf_url = st.sidebar.text_input(
+    "Or PDF URL", placeholder="https://example.com/file.pdf"
+)
+download_button = st.sidebar.button("Download URL PDF", disabled=not pdf_url)
+
+chosen_pdf_path: pathlib.Path | None = None
+if uploaded_pdf is not None:
+    try:
+        chosen_pdf_path = save_uploaded_pdf(uploaded_pdf)
+        st.sidebar.success(f"Uploaded: {uploaded_pdf.name}")
+    except Exception as e:
+        st.sidebar.error(f"Upload failed: {e}")
+elif download_button and pdf_url:
+    try:
+        resp = requests.get(pdf_url, timeout=60)
+        resp.raise_for_status()
+        dl_dir = pathlib.Path("downloaded_pdfs")
+        dl_dir.mkdir(exist_ok=True)
+        hash_id = hashlib.sha1(pdf_url.encode()).hexdigest()[:12]
+        filename = f"url_{hash_id}.pdf"
+        target = dl_dir / filename
+        target.write_bytes(resp.content)
+        latest = dl_dir / "uploaded_latest.pdf"
+        try:
+            if latest.exists() or latest.is_symlink():
+                latest.unlink()
+            try:
+                os.symlink(target, latest)
+            except OSError:
+                import shutil
+
+                shutil.copy2(target, latest)
+        except Exception:
+            pass
+        chosen_pdf_path = target
+        st.sidebar.success(f"Downloaded PDF -> {filename}")
+    except Exception as e:
+        st.sidebar.error(f"Download failed: {e}")
+
+if chosen_pdf_path is None:
+    # fallback to most recent uploaded or default Automata.pdf
+    fallback = pathlib.Path("uploaded_pdfs/uploaded_latest.pdf")
+    if fallback.exists():
+        chosen_pdf_path = fallback
     else:
-        with st.spinner("Building / Rebuilding vector store from PDF ..."):
-            loader = PyPDFLoader("Automata.pdf")
-            data = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000, chunk_overlap=150
-            )
-            docs = text_splitter.split_documents(data)
-            st.session_state["docs_count"] = len(docs)
-            vectorstore = Chroma.from_documents(
-                documents=docs,
-                embedding=embeddings,
-                persist_directory=persist_dir,
-            )
-            vectorstore.persist()
-        st.sidebar.success("Vector store (re)built")
+        chosen_pdf_path = pathlib.Path("Automata.pdf")
 
+st.sidebar.caption(f"Active PDF: {chosen_pdf_path}")
+st.session_state["active_pdf_path"] = str(chosen_pdf_path)
+os.environ["PDF_PATH"] = str(chosen_pdf_path)  # for notebook / external processes
+
+rebuild = st.sidebar.toggle(
+    "Rebuild Vector Store from PDF",
+    value=False,
+    help="Force re-embedding current PDF and overwrite/create its Chroma store.",
+)
+
+pdf_hash = hashlib.sha1(str(chosen_pdf_path).encode()).hexdigest()[:10]
+persist_dir = f"chroma_store_{pdf_hash}"
+embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+store_exists = os.path.exists(os.path.join(persist_dir, "chroma.sqlite3"))
+
+need_build = (
+    rebuild
+    or ("retriever" not in st.session_state)
+    or st.session_state.get("_retriever_pdf_hash") != pdf_hash
+    or not store_exists
+)
+
+if need_build:
+    with st.spinner("Loading & embedding PDF ..."):
+        loader = PyPDFLoader(str(chosen_pdf_path))
+        data = loader.load()
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, chunk_overlap=150
+        )
+        docs = text_splitter.split_documents(data)
+        st.session_state["docs_count"] = len(docs)
+        vectorstore = Chroma.from_documents(
+            documents=docs,
+            embedding=embeddings,
+            persist_directory=persist_dir,
+        )
+        # Safely persist (handle versions lacking persist or write issues)
+        try:
+            if hasattr(vectorstore, "persist"):
+                vectorstore.persist()
+        except Exception as e:
+            st.sidebar.warning(f"Persist skipped: {e}")
     st.session_state["vectorstore"] = vectorstore
     st.session_state["retriever"] = vectorstore.as_retriever(
         search_type="similarity", search_kwargs={"k": 6}
@@ -65,6 +150,15 @@ if "retriever" not in st.session_state:
     st.session_state["llm"] = ChatGoogleGenerativeAI(
         model="gemini-2.0-flash", temperature=0, max_tokens=None, timeout=None
     )
+    st.session_state["_retriever_pdf_hash"] = pdf_hash
+    st.sidebar.success("Vector store ready")
+else:
+    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
+    st.session_state["vectorstore"] = vectorstore
+    st.session_state["retriever"] = vectorstore.as_retriever(
+        search_type="similarity", search_kwargs={"k": 6}
+    )
+    st.sidebar.info("Using cached vector store")
 
 retriever = st.session_state["retriever"]
 llm = st.session_state["llm"]
