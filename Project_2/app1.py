@@ -23,10 +23,10 @@ except RuntimeError:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-st.title("RAG Application built on Gemini Model (Persistent Chroma)")
+st.title("RAG Application built on Gemini Model (Persistent Chroma, Multi-PDF)")
 
 # ----------------------- Sidebar: PDF Source Selection -----------------------
-st.sidebar.header("PDF Source")
+st.sidebar.header("PDF Sources")
 
 
 def save_uploaded_pdf(uploaded_file) -> pathlib.Path:
@@ -51,59 +51,78 @@ def save_uploaded_pdf(uploaded_file) -> pathlib.Path:
     return target
 
 
-uploaded_pdf = st.sidebar.file_uploader(
-    "Upload a PDF", type=["pdf"], help="Embed a local PDF."
+uploaded_pdfs = st.sidebar.file_uploader(
+    "Upload PDFs (multiple)",
+    type=["pdf"],
+    accept_multiple_files=True,
+    help="Embed one or more local PDFs.",
 )
-pdf_url = st.sidebar.text_input(
-    "Or PDF URL", placeholder="https://example.com/file.pdf"
+pdf_urls_raw = st.sidebar.text_area(
+    "Or PDF URLs (one per line)",
+    placeholder="https://example.com/a.pdf\nhttps://example.com/b.pdf",
 )
-download_button = st.sidebar.button("Download URL PDF", disabled=not pdf_url)
+download_urls = st.sidebar.button(
+    "Download URL PDFs", disabled=not pdf_urls_raw.strip()
+)
 
-chosen_pdf_path: pathlib.Path | None = None
-if uploaded_pdf is not None:
-    try:
-        chosen_pdf_path = save_uploaded_pdf(uploaded_pdf)
-        st.sidebar.success(f"Uploaded: {uploaded_pdf.name}")
-    except Exception as e:
-        st.sidebar.error(f"Upload failed: {e}")
-elif download_button and pdf_url:
-    try:
-        resp = requests.get(pdf_url, timeout=60)
-        resp.raise_for_status()
-        dl_dir = pathlib.Path("downloaded_pdfs")
-        dl_dir.mkdir(exist_ok=True)
-        hash_id = hashlib.sha1(pdf_url.encode()).hexdigest()[:12]
-        filename = f"url_{hash_id}.pdf"
-        target = dl_dir / filename
-        target.write_bytes(resp.content)
-        latest = dl_dir / "uploaded_latest.pdf"
+chosen_pdf_paths: list[pathlib.Path] = []
+# Handle uploads
+if uploaded_pdfs:
+    for uf in uploaded_pdfs:
         try:
-            if latest.exists() or latest.is_symlink():
-                latest.unlink()
-            try:
-                os.symlink(target, latest)
-            except OSError:
-                import shutil
+            p = save_uploaded_pdf(uf)
+            chosen_pdf_paths.append(p)
+        except Exception as e:
+            st.sidebar.error(f"Upload failed for {uf.name}: {e}")
+    if uploaded_pdfs:
+        st.sidebar.success(f"Uploaded {len(uploaded_pdfs)} PDF(s)")
 
-                shutil.copy2(target, latest)
-        except Exception:
-            pass
-        chosen_pdf_path = target
-        st.sidebar.success(f"Downloaded PDF -> {filename}")
-    except Exception as e:
-        st.sidebar.error(f"Download failed: {e}")
+# Handle URL downloads
+if download_urls:
+    dl_dir = pathlib.Path("downloaded_pdfs")
+    dl_dir.mkdir(exist_ok=True)
+    for line in pdf_urls_raw.splitlines():
+        url = line.strip()
+        if not url:
+            continue
+        try:
+            r = requests.get(url, timeout=60)
+            r.raise_for_status()
+            hash_id = hashlib.sha1(url.encode()).hexdigest()[:12]
+            fname = f"url_{hash_id}.pdf"
+            tgt = dl_dir / fname
+            tgt.write_bytes(r.content)
+            chosen_pdf_paths.append(tgt)
+        except Exception as e:
+            st.sidebar.error(f"Download failed for {url}: {e}")
+    if download_urls and chosen_pdf_paths:
+        st.sidebar.success("Downloaded URL PDF(s)")
 
-if chosen_pdf_path is None:
-    # fallback to most recent uploaded or default Automata.pdf
-    fallback = pathlib.Path("uploaded_pdfs/uploaded_latest.pdf")
-    if fallback.exists():
-        chosen_pdf_path = fallback
+# Fallback if no new selections
+if not chosen_pdf_paths:
+    # Try previously active list
+    prev_list = st.session_state.get("active_pdf_paths")
+    if prev_list:
+        chosen_pdf_paths = [pathlib.Path(p) for p in prev_list]
     else:
-        chosen_pdf_path = pathlib.Path("Automata.pdf")
+        default_path = pathlib.Path("Automata.pdf")
+        chosen_pdf_paths = [default_path]
 
-st.sidebar.caption(f"Active PDF: {chosen_pdf_path}")
-st.session_state["active_pdf_path"] = str(chosen_pdf_path)
-os.environ["PDF_PATH"] = str(chosen_pdf_path)  # for notebook / external processes
+# Deduplicate while preserving order
+seen = set()
+deduped = []
+for p in chosen_pdf_paths:
+    key = str(p.resolve())
+    if key not in seen and p.exists():
+        seen.add(key)
+        deduped.append(p)
+chosen_pdf_paths = deduped
+
+st.sidebar.caption(
+    "Active PDFs:\n" + "\n".join(f"- {p.name}" for p in chosen_pdf_paths)
+)
+st.session_state["active_pdf_paths"] = [str(p) for p in chosen_pdf_paths]
+os.environ["PDF_PATHS"] = "|".join(str(p) for p in chosen_pdf_paths)
 
 rebuild = st.sidebar.toggle(
     "Rebuild Vector Store from PDF",
@@ -111,8 +130,11 @@ rebuild = st.sidebar.toggle(
     help="Force re-embedding current PDF and overwrite/create its Chroma store.",
 )
 
-pdf_hash = hashlib.sha1(str(chosen_pdf_path).encode()).hexdigest()[:10]
-persist_dir = f"chroma_store_{pdf_hash}"
+multi_sig = ";".join(
+    sorted(f"{p.name}:{p.stat().st_size}" for p in chosen_pdf_paths if p.exists())
+)
+pdf_hash = hashlib.sha1(multi_sig.encode()).hexdigest()[:10]
+persist_dir = f"chroma_store_multi_{pdf_hash}"
 embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 store_exists = os.path.exists(os.path.join(persist_dir, "chroma.sqlite3"))
 
@@ -124,16 +146,26 @@ need_build = (
 )
 
 if need_build:
-    with st.spinner("Loading & embedding PDF ..."):
-        loader = PyPDFLoader(str(chosen_pdf_path))
-        data = loader.load()
+    with st.spinner("Loading & embedding PDF(s) ..."):
+        all_docs = []
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, chunk_overlap=150
         )
-        docs = text_splitter.split_documents(data)
-        st.session_state["docs_count"] = len(docs)
+        for p in chosen_pdf_paths:
+            try:
+                loader = PyPDFLoader(str(p))
+                data = loader.load()
+                docs = text_splitter.split_documents(data)
+                # Tag metadata with source filename for traceability
+                for d in docs:
+                    d.metadata = d.metadata or {}
+                    d.metadata["source_file"] = p.name
+                all_docs.extend(docs)
+            except Exception as e:
+                st.sidebar.error(f"Failed to process {p.name}: {e}")
+        st.session_state["docs_count"] = len(all_docs)
         vectorstore = Chroma.from_documents(
-            documents=docs,
+            documents=all_docs,
             embedding=embeddings,
             persist_directory=persist_dir,
         )
@@ -162,10 +194,12 @@ else:
 
 retriever = st.session_state["retriever"]
 llm = st.session_state["llm"]
-st.caption(f"Indexed chunks: {st.session_state.get('docs_count', '?')}")
+st.caption(
+    f"Indexed chunks across {len(chosen_pdf_paths)} PDF(s): {st.session_state.get('docs_count', '?')}"
+)
 
 
-query = st.chat_input("Ask a question about the embedded PDF:")
+query = st.chat_input("Ask a question about the embedded PDF(s):")
 prompt = query
 
 system_prompt = (
@@ -201,7 +235,12 @@ if query:
         with st.expander("Show retrieved context (sources)"):
             for i, d in enumerate(context_docs, 1):
                 meta = d.metadata or {}
-                source = meta.get("source") or meta.get("file_path") or "(unknown)"
+                source = (
+                    meta.get("source_file")
+                    or meta.get("source")
+                    or meta.get("file_path")
+                    or "(unknown)"
+                )
                 st.markdown(
                     f"**{i}. Source:** {source}\n\n````\n{d.page_content[:1200]}\n````"
                 )
